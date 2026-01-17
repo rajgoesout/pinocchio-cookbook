@@ -32,6 +32,8 @@ pub mod vault {
 ## State
 
 ```rust
+use pinocchio::account::RefMut;
+
 #[repr(C)]
 pub struct Vault {
     pub authority: [u8; 32],
@@ -43,9 +45,11 @@ pub struct Vault {
 impl Vault {
     pub const LEN: usize = 73;
 
-    pub fn from_account_mut(account: &AccountView) -> Result<&mut Self, ProgramError> {
-        let mut data = account.try_borrow_mut()?;
-        Ok(unsafe { &mut *(data.as_mut_ptr() as *mut Self) })
+    pub fn from_account_mut(account: &AccountView) -> Result<RefMut<Self>, ProgramError> {
+        let data = account.try_borrow_mut()?;
+        Ok(RefMut::map(data, |data| unsafe {
+            &mut *(data.as_mut_ptr() as *mut Self)
+        }))
     }
 }
 ```
@@ -58,10 +62,25 @@ fn initialize(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
+    if !payer.is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+
+    if _token_program.address() != &pinocchio_token::ID {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    if _system_program.address() != &pinocchio_system::ID {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
     let (vault_pda, vault_bump) = Address::find_program_address(
         &[b"vault", mint.address().as_ref()],
         program_id,
     );
+    if vault.address() != &vault_pda {
+        return Err(ProgramError::InvalidAccountData);
+    }
 
     let vault_bump_bytes = [vault_bump];
     let vault_seeds: [Seed; 3] = [
@@ -86,6 +105,9 @@ fn initialize(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
         &[b"vault_token", vault.address().as_ref()],
         program_id,
     );
+    if vault_token.address() != &token_pda {
+        return Err(ProgramError::InvalidAccountData);
+    }
     let token_bump_bytes = [token_bump];
     let token_seeds: [Seed; 3] = [
         Seed::from(b"vault_token"),
@@ -104,7 +126,7 @@ fn initialize(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
     InitializeAccount3 {
         account: vault_token,
         mint,
-        owner: vault.address().as_ref(),
+        owner: vault.address(),
     }.invoke()?;
 
     // Init state
@@ -126,6 +148,14 @@ fn deposit(accounts: &[AccountView], amount: u64) -> ProgramResult {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
+    if _token_program.address() != &pinocchio_token::ID {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    if !vault_token.owned_by(&pinocchio_token::ID) || !user_token.owned_by(&pinocchio_token::ID) {
+        return Err(ProgramError::InvalidAccountOwner);
+    }
+
     if !user.is_signer() {
         return Err(ProgramError::MissingRequiredSignature);
     }
@@ -138,7 +168,10 @@ fn deposit(accounts: &[AccountView], amount: u64) -> ProgramResult {
     }.invoke()?;
 
     let state = Vault::from_account_mut(vault)?;
-    state.total = state.total.checked_add(amount).ok_or(ProgramError::Arithmetic)?;
+    state
+        .total
+        .checked_add(amount)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
 
     Ok(())
 }
@@ -151,6 +184,14 @@ fn withdraw(accounts: &[AccountView], amount: u64) -> ProgramResult {
     let [vault, vault_token, user, user_token, _token_program, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
+
+    if _token_program.address() != &pinocchio_token::ID {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    if !vault_token.owned_by(&pinocchio_token::ID) || !user_token.owned_by(&pinocchio_token::ID) {
+        return Err(ProgramError::InvalidAccountOwner);
+    }
 
     if !user.is_signer() {
         return Err(ProgramError::MissingRequiredSignature);
@@ -176,7 +217,10 @@ fn withdraw(accounts: &[AccountView], amount: u64) -> ProgramResult {
         amount,
     }.invoke_signed(&[Signer::from(&seeds)])?;
 
-    state.total = state.total.checked_sub(amount).ok_or(ProgramError::Arithmetic)?;
+    state
+        .total
+        .checked_sub(amount)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
 
     Ok(())
 }
@@ -191,7 +235,7 @@ function getVaultPDA(mint: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from('vault'), mint.toBuffer()],
     PROGRAM_ID
-  );
+  )[0];
 }
 
 function getVaultTokenPDA(vault: PublicKey) {

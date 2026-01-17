@@ -87,7 +87,7 @@ ProgramError::InvalidAccountData        // Bad data
 ProgramError::InvalidAccountOwner       // Wrong owner
 ProgramError::MissingRequiredSignature  // Not signed
 ProgramError::InvalidInstructionData    // Bad instruction
-ProgramError::Arithmetic                // Overflow
+ProgramError::ArithmeticOverflow        // Overflow
 ```
 
 ## Require Macro

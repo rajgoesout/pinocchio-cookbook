@@ -45,7 +45,7 @@ fn create_mint(
     InitializeMint2 {
         mint,
         decimals,
-        mint_authority: authority.as_ref(),
+        mint_authority: authority,
         freeze_authority: None,
     }.invoke()
 }
@@ -75,7 +75,7 @@ fn create_token_account(
     InitializeAccount3 {
         account,
         mint,
-        owner: owner.as_ref(),
+        owner,
     }.invoke()
 }
 ```
@@ -175,11 +175,7 @@ CloseAccount {
 use pinocchio_token::state::TokenAccount;
 
 fn get_balance(account: &AccountView) -> Result<u64, ProgramError> {
-    let data = account.data();
-    if data.len() < 165 {
-        return Err(ProgramError::InvalidAccountData);
-    }
-    let token = unsafe { &*(data.as_ptr() as *const TokenAccount) };
+    let token = TokenAccount::from_account_view(account)?;
     Ok(token.amount())
 }
 ```
@@ -188,14 +184,20 @@ fn get_balance(account: &AccountView) -> Result<u64, ProgramError> {
 
 ```rust
 fn require_token_account(account: &AccountView) -> ProgramResult {
-    if !account.owned_by(&pinocchio_token::ID) || account.data_len() != 165 {
+    if account.data_len() != 165 {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    if !account.owned_by(&pinocchio_token::ID) {
         return Err(ProgramError::InvalidAccountOwner);
     }
     Ok(())
 }
 
 fn require_mint(account: &AccountView) -> ProgramResult {
-    if !account.owned_by(&pinocchio_token::ID) || account.data_len() != 82 {
+    if account.data_len() != 82 {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    if !account.owned_by(&pinocchio_token::ID) {
         return Err(ProgramError::InvalidAccountOwner);
     }
     Ok(())

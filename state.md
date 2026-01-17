@@ -15,6 +15,8 @@
 Anchor uses Borsh serialization. Pinocchio casts raw bytes directly to structs:
 
 ```rust
+use pinocchio::account::{Ref, RefMut};
+
 #[repr(C)]
 pub struct Counter {
     pub authority: [u8; 32],
@@ -25,23 +27,27 @@ pub struct Counter {
 impl Counter {
     pub const LEN: usize = 32 + 8 + 1;  // 41 bytes
 
-    pub fn from_account(account: &AccountView) -> Result<&Self, ProgramError> {
+    pub fn from_account(account: &AccountView) -> Result<Ref<Self>, ProgramError> {
         if account.data_len() < Self::LEN {
             return Err(ProgramError::InvalidAccountData);
         }
-        Ok(unsafe { &*(account.data().as_ptr() as *const Self) })
+        Ok(Ref::map(account.try_borrow()?, |data| unsafe {
+            &*(data.as_ptr() as *const Self)
+        }))
     }
 
-    pub fn from_account_mut(account: &AccountView) -> Result<&mut Self, ProgramError> {
-        let mut data = account.try_borrow_mut()?;
+    pub fn from_account_mut(account: &AccountView) -> Result<RefMut<Self>, ProgramError> {
+        let data = account.try_borrow_mut()?;
         if data.len() < Self::LEN {
             return Err(ProgramError::InvalidAccountData);
         }
-        Ok(unsafe { &mut *(data.as_mut_ptr() as *mut Self) })
+        Ok(RefMut::map(data, |data| unsafe {
+            &mut *(data.as_mut_ptr() as *mut Self)
+        }))
     }
 
-    pub fn authority(&self) -> &Address {
-        unsafe { &*(self.authority.as_ptr() as *const Address) }
+    pub fn authority(&self) -> Address {
+        Address::from(self.authority)
     }
 }
 ```
@@ -78,7 +84,10 @@ fn initialize(account: &AccountView, authority: &Address, bump: u8) -> ProgramRe
 
 fn increment(account: &AccountView) -> ProgramResult {
     let counter = Counter::from_account_mut(account)?;
-    counter.value = counter.value.checked_add(1).ok_or(ProgramError::Arithmetic)?;
+    counter
+        .value
+        .checked_add(1)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
     Ok(())
 }
 ```
@@ -140,12 +149,12 @@ pub struct Vault {
 impl Vault {
     pub const DISCRIMINATOR: u8 = 1;
 
-    pub fn from_account(account: &AccountView) -> Result<&Self, ProgramError> {
-        let data = account.data();
+    pub fn from_account(account: &AccountView) -> Result<Ref<Self>, ProgramError> {
+        let data = account.try_borrow()?;
         if data.len() < Self::LEN || data[0] != Self::DISCRIMINATOR {
             return Err(ProgramError::InvalidAccountData);
         }
-        Ok(unsafe { &*(data.as_ptr() as *const Self) })
+        Ok(Ref::map(data, |data| unsafe { &*(data.as_ptr() as *const Self) }))
     }
 }
 ```

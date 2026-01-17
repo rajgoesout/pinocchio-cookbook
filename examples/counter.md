@@ -40,6 +40,8 @@ pub struct Increment<'info> {
 ## State
 
 ```rust
+use pinocchio::account::RefMut;
+
 #[repr(C)]
 pub struct Counter {
     pub authority: [u8; 32],
@@ -50,9 +52,11 @@ pub struct Counter {
 impl Counter {
     pub const LEN: usize = 41;
 
-    pub fn from_account_mut(account: &AccountView) -> Result<&mut Self, ProgramError> {
-        let mut data = account.try_borrow_mut()?;
-        Ok(unsafe { &mut *(data.as_mut_ptr() as *mut Self) })
+    pub fn from_account_mut(account: &AccountView) -> Result<RefMut<Self>, ProgramError> {
+        let data = account.try_borrow_mut()?;
+        Ok(RefMut::map(data, |data| unsafe {
+            &mut *(data.as_mut_ptr() as *mut Self)
+        }))
     }
 }
 ```
@@ -87,6 +91,14 @@ fn initialize(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
     let [payer, counter, authority, _system, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
+
+    if !payer.is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+
+    if _system.address() != &pinocchio_system::ID {
+        return Err(ProgramError::InvalidAccountData);
+    }
 
     let (pda, bump) = Address::find_program_address(
         &[b"counter", authority.address().as_ref()],
@@ -136,7 +148,10 @@ fn increment(accounts: &[AccountView]) -> ProgramResult {
         return Err(ProgramError::InvalidAccountData);
     }
 
-    state.value = state.value.checked_add(1).ok_or(ProgramError::Arithmetic)?;
+    state
+        .value
+        .checked_add(1)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
     Ok(())
 }
 ```

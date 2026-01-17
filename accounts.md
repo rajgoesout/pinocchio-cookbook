@@ -13,21 +13,23 @@
 ## AccountView API
 
 ```rust
-use pinocchio::{AccountView, Address};
+use pinocchio::{AccountView, Address, ProgramResult};
 
-fn process_instruction(accounts: &[AccountView]) {
+fn process_instruction(accounts: &[AccountView]) -> ProgramResult {
     let account = &accounts[0];
+    let data = account.try_borrow()?;
 
     // Read fields
     let addr: &Address = account.address();
     let lamports: u64 = account.lamports();
-    let data: &[u8] = account.data();
-    let owner: &Address = account.owner();
+    let _bytes: &[u8] = &data;
 
     // Checks
     let is_signer: bool = account.is_signer();
     let is_writable: bool = account.is_writable();
-    account.owned_by(&some_program_id);  // bool
+    let owned_by_program: bool = account.owned_by(&some_program_id);
+    let _ = (addr, lamports, is_signer, is_writable, owned_by_program);
+    Ok(())
 }
 ```
 

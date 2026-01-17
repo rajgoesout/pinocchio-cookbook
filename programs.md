@@ -114,8 +114,8 @@ default_allocator!();
 default_panic_handler!();
 
 fn process_instruction(mut ctx: InstructionContext) -> ProgramResult {
-    let first = ctx.next_account()?;   // Parse first account
-    let second = ctx.next_account()?;  // Parse second account
+    let first = ctx.next_account()?.assume_account();   // Parse first account
+    let second = ctx.next_account()?.assume_account();  // Parse second account
     let data = ctx.instruction_data()?;
     let program_id = ctx.program_id()?;
     Ok(())

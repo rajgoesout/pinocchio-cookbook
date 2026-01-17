@@ -54,7 +54,7 @@ fn test_counter() {
 
     // Verify
     let account = svm.get_account(&counter.pubkey()).unwrap();
-    assert_eq!(account.data[0..8], 0u64.to_le_bytes());
+    assert_eq!(account.data[32..40], 0u64.to_le_bytes());
 }
 ```
 
