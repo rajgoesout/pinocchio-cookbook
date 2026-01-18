@@ -40,7 +40,7 @@ pub struct Increment<'info> {
 ## State
 
 ```rust
-use pinocchio::account::RefMut;
+use pinocchio::{AccountView, account::RefMut, error::ProgramError};
 
 #[repr(C)]
 pub struct Counter {
@@ -142,13 +142,13 @@ fn increment(accounts: &[AccountView]) -> ProgramResult {
         return Err(ProgramError::MissingRequiredSignature);
     }
 
-    let state = Counter::from_account_mut(counter)?;
+    let mut state = Counter::from_account_mut(counter)?;
 
     if state.authority != *authority.address().as_ref() {
         return Err(ProgramError::InvalidAccountData);
     }
 
-    state
+    state.value = state
         .value
         .checked_add(1)
         .ok_or(ProgramError::ArithmeticOverflow)?;

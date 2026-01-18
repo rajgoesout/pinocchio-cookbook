@@ -29,7 +29,7 @@ bpf-entrypoint = []
 cpi = ["pinocchio/cpi"]
 
 [dependencies]
-pinocchio = "0.9"
+pinocchio = "0.10"
 pinocchio-system = "0.3"
 pinocchio-token = "0.4"
 ```

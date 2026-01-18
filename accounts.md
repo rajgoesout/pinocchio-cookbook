@@ -13,9 +13,15 @@
 ## AccountView API
 
 ```rust
-use pinocchio::{AccountView, Address, ProgramResult};
+use pinocchio::{AccountView, Address, ProgramResult, entrypoint, error::ProgramError};
 
-fn process_instruction(accounts: &[AccountView]) -> ProgramResult {
+entrypoint!(process_instruction);
+
+pub fn process_instruction(
+    program_id: &Address,
+    accounts: &[AccountView],
+    instruction_data: &[u8],
+) -> ProgramResult {
     let account = &accounts[0];
     let data = account.try_borrow()?;
 
@@ -27,7 +33,7 @@ fn process_instruction(accounts: &[AccountView]) -> ProgramResult {
     // Checks
     let is_signer: bool = account.is_signer();
     let is_writable: bool = account.is_writable();
-    let owned_by_program: bool = account.owned_by(&some_program_id);
+    let owned_by_program: bool = account.owned_by(program_id);
     let _ = (addr, lamports, is_signer, is_writable, owned_by_program);
     Ok(())
 }
@@ -36,7 +42,11 @@ fn process_instruction(accounts: &[AccountView]) -> ProgramResult {
 ## Destructuring Accounts
 
 ```rust
-fn process_instruction(accounts: &[AccountView]) -> ProgramResult {
+pub fn process_instruction(
+    program_id: &Address,
+    accounts: &[AccountView],
+    instruction_data: &[u8],
+) -> ProgramResult {
     let [payer, counter, authority, system_program, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };

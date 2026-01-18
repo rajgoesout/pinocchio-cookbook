@@ -32,7 +32,7 @@ pub mod vault {
 ## State
 
 ```rust
-use pinocchio::account::RefMut;
+use pinocchio::{AccountView, account::RefMut, error::ProgramError};
 
 #[repr(C)]
 pub struct Vault {
@@ -50,6 +50,41 @@ impl Vault {
         Ok(RefMut::map(data, |data| unsafe {
             &mut *(data.as_mut_ptr() as *mut Self)
         }))
+    }
+}
+```
+
+## Program
+
+```rust
+#![no_std]
+
+use pinocchio::{AccountView, Address, ProgramResult, entrypoint, error::ProgramError};
+use pinocchio::cpi::{Signer, Seed};
+use pinocchio::sysvars::Rent;
+use pinocchio_system::instructions::CreateAccount;
+use pinocchio_token::instructions::{InitializeAccount3, Transfer};
+
+pub const ID: Address = pinocchio::address!("Vault11111111111111111111111111111111111111");
+
+entrypoint!(process_instruction);
+
+pub fn process_instruction(
+    program_id: &Address,
+    accounts: &[AccountView],
+    instruction_data: &[u8],
+) -> ProgramResult {
+    match instruction_data.split_first() {
+        Some((&0, _)) => initialize(program_id, accounts),
+        Some((&1, rest)) => {
+            let amount = u64::from_le_bytes(rest[0..8].try_into().unwrap());
+            deposit(accounts, amount)
+        }
+        Some((&2, rest)) => {
+            let amount = u64::from_le_bytes(rest[0..8].try_into().unwrap());
+            withdraw(accounts, amount)
+        }
+        _ => Err(ProgramError::InvalidInstructionData),
     }
 }
 ```
@@ -167,8 +202,8 @@ fn deposit(accounts: &[AccountView], amount: u64) -> ProgramResult {
         amount,
     }.invoke()?;
 
-    let state = Vault::from_account_mut(vault)?;
-    state
+    let mut state = Vault::from_account_mut(vault)?;
+    state.total = state
         .total
         .checked_add(amount)
         .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -197,16 +232,20 @@ fn withdraw(accounts: &[AccountView], amount: u64) -> ProgramResult {
         return Err(ProgramError::MissingRequiredSignature);
     }
 
-    let state = Vault::from_account_mut(vault)?;
+    let mut state = Vault::from_account_mut(vault)?;
 
     if state.authority != *user.address().as_ref() {
         return Err(ProgramError::InvalidAccountData);
     }
 
-    let bump_bytes = [state.bump];
+    // Extract values before creating seeds to avoid borrow issues
+    let bump = state.bump;
+    let mint = state.mint;
+
+    let bump_bytes = [bump];
     let seeds: [Seed; 3] = [
         Seed::from(b"vault"),
-        Seed::from(state.mint.as_slice()),
+        Seed::from(mint.as_slice()),
         Seed::from(&bump_bytes),
     ];
 
@@ -217,7 +256,7 @@ fn withdraw(accounts: &[AccountView], amount: u64) -> ProgramResult {
         amount,
     }.invoke_signed(&[Signer::from(&seeds)])?;
 
-    state
+    state.total = state
         .total
         .checked_sub(amount)
         .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -245,10 +284,47 @@ function getVaultTokenPDA(vault: PublicKey) {
   )[0];
 }
 
+function initializeIx(payer: PublicKey, mint: PublicKey) {
+  const vault = getVaultPDA(mint);
+  const vaultToken = getVaultTokenPDA(vault);
+
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: vaultToken, isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([0]),
+  });
+}
+
 function depositIx(vault: PublicKey, user: PublicKey, userToken: PublicKey, amount: bigint) {
   const vaultToken = getVaultTokenPDA(vault);
   const data = Buffer.alloc(9);
   data.writeUInt8(1, 0);
+  data.writeBigUInt64LE(amount, 1);
+
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: vaultToken, isSigner: false, isWritable: true },
+      { pubkey: user, isSigner: true, isWritable: false },
+      { pubkey: userToken, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+function withdrawIx(vault: PublicKey, user: PublicKey, userToken: PublicKey, amount: bigint) {
+  const vaultToken = getVaultTokenPDA(vault);
+  const data = Buffer.alloc(9);
+  data.writeUInt8(2, 0);
   data.writeBigUInt64LE(amount, 1);
 
   return new TransactionInstruction({

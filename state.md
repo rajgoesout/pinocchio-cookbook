@@ -83,8 +83,8 @@ fn initialize(account: &AccountView, authority: &Address, bump: u8) -> ProgramRe
 }
 
 fn increment(account: &AccountView) -> ProgramResult {
-    let counter = Counter::from_account_mut(account)?;
-    counter
+    let mut counter = Counter::from_account_mut(account)?;
+    counter.value = counter
         .value
         .checked_add(1)
         .ok_or(ProgramError::ArithmeticOverflow)?;

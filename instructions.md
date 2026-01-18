@@ -15,7 +15,7 @@ Anchor uses 8-byte discriminators derived from instruction names. Pinocchio uses
 
 ```rust
 pub fn process_instruction(
-    _: &Address,
+    program_id: &Address,
     accounts: &[AccountView],
     instruction_data: &[u8],
 ) -> ProgramResult {
